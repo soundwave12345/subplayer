@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Play, Pause, SkipForward, SkipBack, ChevronDown, Shuffle, Repeat, Cast, Mic2, Music2 } from 'lucide-react';
 import { Chromecast } from '@caprockapps/capacitor-chromecast';
 import { Song, SubsonicCredentials, Lyrics } from '../types';
-import { getStreamUrl, getLyrics } from '../services/subsonicService';
+import { getStreamUrl, getLyrics, getCastUrl } from '../services/subsonicService';
 
 interface PlayerProps {
   currentSong: Song | null;
@@ -166,7 +166,7 @@ const Player: React.FC<PlayerProps> = ({
   // --- CHROMECAST ---
   const handleCast = async () => {
     if (!currentSong) {
-        console.warn("[Chromecast] Cannot cast: No song selected");
+        alert("Play a song first");
         return;
     }
 
@@ -176,22 +176,28 @@ const Player: React.FC<PlayerProps> = ({
         // 1. Request Session (Opens native dialog)
         console.log("[Chromecast] Requesting session...");
         await Chromecast.requestSession();
-        console.log("[Chromecast] Session requested/established.");
+        console.log("[Chromecast] Session requested successfully.");
         
+        // Wait a moment for the session to fully establish
+        await new Promise(r => setTimeout(r, 1000));
+
         // 2. Generate the Stream URL
-        const streamUrl = getStreamUrl(credentials, currentSong.id);
+        // Use getCastUrl to ensure mp3 format is explicitly requested
+        const streamUrl = getCastUrl(credentials, currentSong.id);
         console.log("[Chromecast] Generated Stream URL:", streamUrl);
         
         // 3. Launch Media on the Cast device
-        // Note: We might need to append '&format=mp3' or similar depending on server config,
-        // but standard Subsonic streams usually work if headers are correct.
         console.log("[Chromecast] Launching media on device...");
-        const result = await Chromecast.launchMedia(streamUrl);
-        console.log("[Chromecast] Media launched. Result:", result);
+        
+        // Alert for debugging on phone screen
+        alert(`Casting: ${currentSong.title} to ${streamUrl}`);
+
+        await Chromecast.launchMedia(streamUrl);
+        console.log("[Chromecast] Media launched.");
         
     } catch (e) {
         console.error("[Chromecast] Error occurred:", e);
-        // alert("Cast Error: " + JSON.stringify(e)); // Uncomment for on-device debugging without PC
+        alert("Cast Error: " + JSON.stringify(e)); 
     }
   };
 

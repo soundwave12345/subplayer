@@ -66,6 +66,17 @@ export const getStreamUrl = (creds: SubsonicCredentials, id: string): string => 
   return url;
 };
 
+/**
+ * Generates a Chromecast-compatible stream URL.
+ * Forces MP3 format and adds estimateContentLength to help the receiver.
+ */
+export const getCastUrl = (creds: SubsonicCredentials, id: string): string => {
+  const baseUrl = creds.url.replace(/\/$/, '');
+  const params = getAuthParams(creds);
+  // maxBitRate=0 ensures no transcoding if possible, format=mp3 helps receiver detection
+  return `${baseUrl}/rest/stream?id=${id}&format=mp3&estimateContentLength=true&${params}`;
+};
+
 export const getRandomSongs = async (creds: SubsonicCredentials, size: number = 20): Promise<Song[]> => {
   try {
     const baseUrl = creds.url.replace(/\/$/, '');
@@ -107,6 +118,8 @@ export const getRecentAlbums = async (creds: SubsonicCredentials, size: number =
       artist: a.artist,
       year: a.year,
       coverArt: getCoverArtUrl(creds, a.coverArt || a.id),
+      duration: a.duration,
+      songCount: a.songCount
     }));
   } catch (error) {
     console.error("[Subsonic] getRecentAlbums failed:", error);
