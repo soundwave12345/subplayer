@@ -38,11 +38,17 @@ const Player: React.FC<PlayerProps> = ({
 
   // --- INITIALIZE CHROMECAST ---
   useEffect(() => {
-    console.log("[Chromecast] Initializing plugin with App ID: CC1AD845 (Default Media Receiver)");
-    // Initialize with Default Media Receiver App ID
+    console.log("[Chromecast] Initializing plugin with App ID: CC1AD845");
     Chromecast.initialize({ appId: 'CC1AD845' })
         .then(() => console.log("[Chromecast] Initialization successful"))
         .catch(err => console.error("[Chromecast] Init error:", err));
+
+    // Add Listener for Session Start (In case promise hangs)
+    Chromecast.addListener('sessionStarted', () => {
+        console.log("[Chromecast] Event: sessionStarted received!");
+        // We could trigger play here if we knew the user intended to play
+    });
+
   }, []);
 
   // --- DATA FETCHING ---
@@ -50,7 +56,6 @@ const Player: React.FC<PlayerProps> = ({
       if (currentSong) {
           setLyrics(null);
           setParsedLyrics([]);
-          // Changed: Pass the full currentSong object, not just ID
           getLyrics(credentials, currentSong).then(l => {
               if (l) {
                   setLyrics(l);
@@ -63,7 +68,6 @@ const Player: React.FC<PlayerProps> = ({
   const parseLyrics = (content: string) => {
       const lines = content.split('\n');
       const parsed = [];
-      // Regex for [mm:ss.xx]
       const timeReg = /\[(\d{2}):(\d{2})(\.\d{2,3})?\]/;
       
       let hasTimestamps = false;
@@ -79,13 +83,11 @@ const Player: React.FC<PlayerProps> = ({
               const text = line.replace(timeReg, '').trim();
               if (text) parsed.push({ time, text });
           } else if (line.trim()) {
-              // If mixed or no timestamps, just push with 0 or handle as plain text
               parsed.push({ time: -1, text: line.trim() });
           }
       }
 
       if (!hasTimestamps) {
-          // Plain text lyrics
            setParsedLyrics(lines.map(l => ({ time: -1, text: l })));
       } else {
            setParsedLyrics(parsed);
@@ -93,7 +95,6 @@ const Player: React.FC<PlayerProps> = ({
   };
 
   // --- AUDIO LOGIC ---
-  // Handle Audio Source
   useEffect(() => {
     if (currentSong && audioRef.current) {
       const url = getStreamUrl(credentials, currentSong.id);
@@ -105,7 +106,6 @@ const Player: React.FC<PlayerProps> = ({
     }
   }, [currentSong, credentials]);
 
-  // Handle Play/Pause toggle
   useEffect(() => {
     if (!audioRef.current) return;
     if (isPlaying) {
@@ -115,7 +115,6 @@ const Player: React.FC<PlayerProps> = ({
     }
   }, [isPlaying]);
 
-  // Android Auto / Media Session API Integration
   useEffect(() => {
     if ('mediaSession' in navigator && currentSong) {
         navigator.mediaSession.metadata = new MediaMetadata({
@@ -134,8 +133,6 @@ const Player: React.FC<PlayerProps> = ({
     }
   }, [currentSong, onPlayPause, onPrev, onNext]);
 
-
-  // Time Update Loop
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       const cur = audioRef.current.currentTime;
@@ -164,46 +161,46 @@ const Player: React.FC<PlayerProps> = ({
   };
 
   // --- CHROMECAST ---
+  const launchCastMedia = async (song: Song) => {
+      try {
+        const streamUrl = getCastUrl(credentials, song.id);
+        console.log("[Chromecast] Launching URL:", streamUrl);
+        
+        const result = await Chromecast.launchMedia(streamUrl);
+        
+        if (result) {
+            console.log("[Chromecast] Launch command returned SUCCESS");
+            // Optionally pause local playback here
+            if (audioRef.current) audioRef.current.pause();
+        } else {
+            console.warn("[Chromecast] Launch command returned FALSE (failed?)");
+        }
+      } catch (err) {
+        console.error("[Chromecast] Error launching media:", err);
+        alert("Cast Media Error: " + JSON.stringify(err));
+      }
+  }
+
   const handleCast = async () => {
     if (!currentSong) {
         alert("Play a song first");
         return;
     }
 
-    console.log("[Chromecast] User clicked Cast button. Starting flow...");
-
+    console.log("[Chromecast] User requested session...");
     try {
-        // 1. Request Session (Opens native dialog)
-        console.log("[Chromecast] Requesting session...");
+        // We await this, but if it hangs, we hope the sessionStarted event fires
         await Chromecast.requestSession();
-        console.log("[Chromecast] Session requested successfully.");
+        console.log("[Chromecast] Session Promise Resolved.");
         
-        // Wait a moment for the session to fully establish
-        await new Promise(r => setTimeout(r, 1000));
-
-        // 2. Generate the Stream URL
-        // Use getCastUrl to ensure mp3 format is explicitly requested
-        const streamUrl = getCastUrl(credentials, currentSong.id);
-        console.log("[Chromecast] Generated Stream URL:", streamUrl);
-        
-        // 3. Launch Media on the Cast device
-        console.log("[Chromecast] Launching media on device...");
-        
-        // Alert for debugging on phone screen
-        alert(`Casting: ${currentSong.title} to ${streamUrl}`);
-
-        await Chromecast.launchMedia(streamUrl);
-        console.log("[Chromecast] Media launched.");
-        
+        // Give it a split second to ensure connection is stable
+        setTimeout(() => launchCastMedia(currentSong), 500);
     } catch (e) {
-        console.error("[Chromecast] Error occurred:", e);
-        alert("Cast Error: " + JSON.stringify(e)); 
+        console.error("[Chromecast] Session Error:", e);
     }
   };
 
   // --- UI RENDERING ---
-
-  // Helper to get active lyric line
   const getActiveLyricIndex = () => {
       if (parsedLyrics.length === 0 || parsedLyrics[0].time === -1) return -1;
       for (let i = parsedLyrics.length - 1; i >= 0; i--) {
@@ -214,7 +211,6 @@ const Player: React.FC<PlayerProps> = ({
 
   const activeLyricIndex = getActiveLyricIndex();
 
-  // Auto scroll lyrics
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
       if (showLyrics && activeLyricIndex !== -1 && lyricsContainerRef.current) {
@@ -227,7 +223,7 @@ const Player: React.FC<PlayerProps> = ({
 
   return (
     <>
-      {/* 1. Full Screen Player UI - Z-Index increased to 60 to cover bottom nav (z-50) */}
+      {/* 1. Full Screen Player UI */}
       {currentSong && isExpanded && (
         <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom duration-300">
             {/* Super Blurred Chromatic Background */}
@@ -248,13 +244,12 @@ const Player: React.FC<PlayerProps> = ({
                 <ChevronDown size={32} />
               </button>
               <span className="text-xs font-bold tracking-widest uppercase text-white/80">Now Playing</span>
-              {/* Cast Button */}
               <button onClick={handleCast} className="text-white hover:text-subsonic-primary p-2">
                  <Cast size={24} />
               </button>
             </div>
 
-            {/* Main Content: Toggle between Art and Lyrics */}
+            {/* Main Content */}
             <div className="relative z-10 flex-1 flex items-center justify-center p-6 min-h-0 overflow-hidden">
                {showLyrics && lyrics ? (
                    <div ref={lyricsContainerRef} className="w-full h-full overflow-y-auto hide-scrollbar text-center px-4 py-10 space-y-6 mask-image-gradient">
@@ -270,7 +265,7 @@ const Player: React.FC<PlayerProps> = ({
                                 {line.text}
                             </p>
                         ))}
-                        <div className="h-20" /> {/* Spacer */}
+                        <div className="h-20" /> 
                    </div>
                ) : (
                     <div className="w-full max-w-xs md:max-w-md aspect-square rounded-2xl overflow-hidden shadow-2xl border border-white/10 ring-1 ring-white/5 transition-transform duration-500">
@@ -291,7 +286,6 @@ const Player: React.FC<PlayerProps> = ({
                     <p className="text-lg text-subsonic-secondary truncate mt-1">{currentSong.artist}</p>
                     <p className="text-sm text-white/50 truncate">{currentSong.album}</p>
                   </div>
-                  {/* Lyrics Toggle Button */}
                   <button 
                     onClick={() => setShowLyrics(!showLyrics)}
                     disabled={!lyrics}
@@ -354,7 +348,7 @@ const Player: React.FC<PlayerProps> = ({
         </div>
       )}
 
-      {/* 2. Mini Player UI - Always visible when not expanded, z-index just below full screen */}
+      {/* 2. Mini Player UI */}
       {currentSong && !isExpanded && (
         <div 
           onClick={onExpand}
@@ -376,7 +370,6 @@ const Player: React.FC<PlayerProps> = ({
               </div>
             </div>
 
-            {/* Mini Player Controls - Explicitly added Play/Pause here */}
             <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
               <button onClick={onPrev} className="text-white hover:text-subsonic-primary transition-colors hidden sm:block">
                 <SkipBack size={20} fill="currentColor" />
@@ -396,7 +389,6 @@ const Player: React.FC<PlayerProps> = ({
             <div className="hidden sm:block w-8"></div> 
           </div>
           
-          {/* Mini Progress Bar */}
           <div className="absolute top-0 left-0 w-full h-0.5 bg-white/10">
             <div 
                 className="h-full bg-subsonic-primary transition-all duration-500 ease-linear" 

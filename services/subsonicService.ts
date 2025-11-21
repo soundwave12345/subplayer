@@ -69,12 +69,15 @@ export const getStreamUrl = (creds: SubsonicCredentials, id: string): string => 
 /**
  * Generates a Chromecast-compatible stream URL.
  * Forces MP3 format and adds estimateContentLength to help the receiver.
+ * Adds &.mp3 at the end to trick receivers into detecting type by extension.
  */
 export const getCastUrl = (creds: SubsonicCredentials, id: string): string => {
   const baseUrl = creds.url.replace(/\/$/, '');
   const params = getAuthParams(creds);
-  // maxBitRate=0 ensures no transcoding if possible, format=mp3 helps receiver detection
-  return `${baseUrl}/rest/stream?id=${id}&format=mp3&estimateContentLength=true&${params}`;
+  // maxBitRate=320 enforces transcoding if source is FLAC/Lossless
+  // format=mp3 tells Subsonic what container we want
+  // suffix=.mp3 helps the Chromecast receiver identify the media type from the URL string
+  return `${baseUrl}/rest/stream?id=${id}&format=mp3&maxBitRate=320&estimateContentLength=true&${params}&suffix=.mp3`;
 };
 
 export const getRandomSongs = async (creds: SubsonicCredentials, size: number = 20): Promise<Song[]> => {
