@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, Pause, SkipForward, SkipBack, ChevronDown, Shuffle, Repeat, Cast, Mic2, Music2 } from 'lucide-react';
-import { Chromecast } from '@caprockapps/capacitor-chromecast';
+import { Chromecast } from '"@pierrejordans/capacitor-chromecast';
 import { Song, SubsonicCredentials, Lyrics } from '../types';
 import { getStreamUrl, getLyrics, getCastUrl } from '../services/subsonicService';
 
